@@ -260,7 +260,7 @@ Cmake_threadX_Template/
 ├── ThreadX/
 │   ├── common/    inc(12) + src(185)
 │   └── ports/cortex_m7/gnu/  inc + src(7) + example_build/tx_initialize_low_level.S
-├── Doc/     例程说明 + serial_output_sample.log（实抓串口日志）
+├── Doc/     例程说明 + serial_output_sample.txt（实抓串口日志）
 ├── .vscode/, LICENSE, THIRD_PARTY_NOTICES.md
 ```
 
