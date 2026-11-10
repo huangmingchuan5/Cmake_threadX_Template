@@ -333,7 +333,7 @@ AppTaskCom: f_a = 1.10000000211, f_b = 2.23449999578
 ...
 ```
 
-原始日志存档在 `Doc/serial_output_sample.log`。这条输出同时证明了三件事：
+原始日志存档在 `Doc/serial_output_sample.txt`。这条输出同时证明了三件事：
 
 1. **printf 重定向成功** —— newlib 的 `_write → __io_putchar → comSendChar(COM1)` 这条链是通的（这是移植中最容易"编译通过但没输出"的一环）。
 2. **浮点打印成功** —— `%.11f` 精确到 1e-11，说明 `-u _printf_float` 与 `--specs=nano.specs` 配置正确。
