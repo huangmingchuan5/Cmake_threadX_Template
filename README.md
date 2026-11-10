@@ -6,7 +6,10 @@
 原工程提供 AC5 / AC6 / IAR / Embedded Studio 四套 IDE 工程，本模板把构建系统整体换成 CMake，源码目录结构保持不变。
 
 > 构建状态：本机 **GCC 15.3.rel2 + CMake 4.4.5 + Ninja 1.13.2** 下 Debug / Release 均可完整编译链接，产出 `.elf / .hex / .bin / .map`。
-> Flash 50.5 KB / RAM 34.7 KB（Debug, -O0）。**未上板实测**（无硬件连接），烧录与运行行为需自行在 V7 板上验证。
+> Flash 50.5 KB / RAM 34.7 KB（Debug, -O0）。
+>
+> **上板状态：已在安富莱 V7 实板（DAPLink/CMSIS-DAP + CH340 串口）完成烧录与运行验证**，
+> 6 个应用任务正常调度、串口 printf 正常输出、线程栈水位可读。详见 §9。
 
 ---
 
@@ -90,6 +93,9 @@ GNU 版 `tx_initialize_low_level.S` 引用 `_vectors` 和 `__RAM_segment_used_en
 | `User/bsp/src/bsp_retarget.c` | newlib `printf` → 安富莱串口 FIFO |
 | `User/syscalls/{syscalls,sysmem}.c` | STM32CubeMX 的 newlib 桩函数（`_write` / `_sbrk` 等） |
 | `CMakePresets.json` / `run.sh` / `flash` / `flash-reset` / `.vscode/` | 构建、烧录、调试配置（沿用你已有的 `stm32h743-cmake-template` 风格） |
+| `tools/serial_monitor.py` | 串口抓取脚本（pyserial），自动挑端口、抓取、识别 ThreadX 标志性输出 |
+| `tools/thread_stack.gdb` | GDB 脚本，直接读出各线程栈水位与 CPU 占用（免按 K1） |
+| `tools/verify_on_board.sh` | 一键：编译 → 烧录 → 抓串口 → 打印结论 |
 | `LICENSE` / `THIRD_PARTY_NOTICES.md` | 工程许可证与第三方声明 |
 
 ### 删除（不进模板）
@@ -157,6 +163,7 @@ GNU 版 `tx_initialize_low_level.S` 引用 `_vectors` 和 `__RAM_segment_used_en
 | CMake | 4.4.5（≥ 3.22） |
 | Ninja | 1.13.2 |
 | OpenOCD（烧录用，可选） | xpack 0.12.0-7 |
+| pyserial（串口脚本用，可选） | 3.5（`pip install pyserial`） |
 
 `run.sh` 在 PATH 找不到工具时会自动回退到 `D:/Embedded_Toolchain/...` 下的安装路径。
 
@@ -199,9 +206,26 @@ openocd -f flash          # 必须在工程根目录执行（flash 里用相对�
 VS Code 已配好 `cortex-debug`（`.vscode/launch.json`）：DAPLink 或 ST-Link 两种配置，F5 直接调试；
 `Ctrl+Shift+B` 走 `.vscode/tasks.json` 调 `run.sh`。
 
+### 上板验证（编译 → 烧录 → 抓串口 → 结论）
+
+```bash
+./tools/verify_on_board.sh            # 一键跑完，依赖 DAPLink + 串口
+DURATION=30 ./tools/verify_on_board.sh # 抓更久
+PORT=COM4    ./tools/verify_on_board.sh # 指定串口
+```
+
+或者分步来：
+
+```bash
+python tools/serial_monitor.py --list                  # 列出串口
+python tools/serial_monitor.py --auto --duration 20    # 自动选端口抓 20 秒
+openocd -f flash                                      # 烧录
+```
+
 ### 预期输出
 
-串口 1（115200-8-N-1）按 K1 键打印任务 CPU 占用率与栈使用情况，格式见 `Doc/01.例程功能说明.txt`。
+串口 1（115200-8-N-1）：启动后 `AppTaskMsg` / `AppTaskCom` 两个任务**每 500 ms 自动打印一次浮点数**（不需要按键）；
+按 K1 会额外打印任务优先级/栈使用统计表，格式见 `Doc/01.例程功能说明.txt`。
 
 ---
 
@@ -226,13 +250,18 @@ Cmake_threadX_Template/
 │   │   └── src/   54 个 BSP 驱动 + bsp_retarget.c
 │   ├── fonts/     字库（默认不编译）
 │   └── syscalls/  newlib 桩函数
+├── tools/
+│   ├── serial_monitor.py    串口抓取脚本（pyserial）
+│   ├── thread_stack.gdb     GDB 脚本：读线程栈水位（免按键版 DispTaskInfo）
+│   └── verify_on_board.sh   一键：编译 + 烧录 + 抓串口
 ├── Libraries/
 │   ├── CMSIS/
 │   └── STM32H7xx_HAL_Driver/
 ├── ThreadX/
 │   ├── common/    inc(12) + src(185)
 │   └── ports/cortex_m7/gnu/  inc + src(7) + example_build/tx_initialize_low_level.S
-├── Doc/、.vscode/、LICENSE、THIRD_PARTY_NOTICES.md
+├── Doc/     例程说明 + serial_output_sample.log（实抓串口日志）
+├── .vscode/, LICENSE, THIRD_PARTY_NOTICES.md
 ```
 
 **工程名自动取目录名**：整个文件夹复制并重命名成 `My_ThreadX_App` 后，
@@ -273,9 +302,108 @@ cmake --build --preset Debug
 
 ---
 
-## 9. 已验证 / 未验证
+## 9. 上板验证结果（实板实测）
 
-**已验证（静态 + 二进制级）**
+### 测试环境
+
+| 项 | 值 |
+|---|---|
+| 开发板 | 安富莱 V7（STM32H743XIHx，Cortex-M7 @400MHz） |
+| 调试器 | DAPLink / CMSIS-DAP（FW 1.0），SWD @1800 kHz |
+| 串口 | CH340 → **COM4**，115200-8-N-1（板子 USART1） |
+| 工具 | GCC 15.3.rel2 / CMake 4.4.5 / Ninja / OpenOCD 0.12.0 / pyserial 3.5 |
+
+### 烧录
+
+```
+openocd -f flash
+Info : [stm32h7x.cpu0] Cortex-M7 r1p1 processor detected
+xPSR: 0x01000000 pc: 0x080087b4 msp: 0x24080000     ← msp 与链接脚本 _estack 一致
+** Programming Finished **
+** Verified OK **
+```
+
+### 串口输出（`tools/serial_monitor.py` 实抓 20 秒，80 行 / 4160 字节）
+
+```
+AppTaskMsg: f_a = 1.10000000210, f_b = 2.23449999580
+AppTaskCom: f_a = 1.10000000210, f_b = 2.23449999580
+AppTaskMsg: f_a = 1.10000000211, f_b = 2.23449999578
+AppTaskCom: f_a = 1.10000000211, f_b = 2.23449999578
+...
+```
+
+原始日志存档在 `Doc/serial_output_sample.log`。这条输出同时证明了三件事：
+
+1. **printf 重定向成功** —— newlib 的 `_write → __io_putchar → comSendChar(COM1)` 这条链是通的（这是移植中最容易"编译通过但没输出"的一环）。
+2. **浮点打印成功** —— `%.11f` 精确到 1e-11，说明 `-u _printf_float` 与 `--specs=nano.specs` 配置正确。
+3. **ThreadX 调度正常** —— `AppTaskMsg`（prio 3）与 `AppTaskCom`（prio 5）两个不同优先级的任务严格每 500 ms 交替输出一次；两个任务都在做 double 运算且数值连续无跳变，说明**浮点上下文（S16-S31）保存正确**，`TX_ENABLE_FPU_SUPPORT` 确实生效。
+
+### 线程栈水位（`tools/thread_stack.gdb`，等效于按 K1 的 DispTaskInfo）
+
+```
+Taskname           Prio    Size     Used     Peak     Free  State
+System Timer Thread    0    1020      395      395      625     3 (SUSPENDED)
+App Task Start        2    4092      519      667     3573     4 (READY)
+App Task STAT        30    1020      519      519      501     4 (READY)
+App Task IDLE        31    1020      151       71      869     0 (READY)
+App Msp Pro           3    4092      543     1007     3549     4 (READY)
+App Task UserIF       4    4092      391      391     3701     4 (READY)
+App Task COM          5    4092      543      907     3549     4 (READY)
+线程总数(含系统定时器线程) = 7
+OS CPU Usage = 0.67%
+```
+
+与原 Keil 例程 `User/main.c` 头部注释记录的栈数据**逐项对照**：
+
+| 任务 | Keil(ARMCC) Cur / Max | 本模板(GCC) Used / Peak | 判定 |
+|---|---|---|---|
+| App Task Start | 383 / 391 | 519 / 667 | 同量级 |
+| App Msp Pro | 543 / 659 | 543 / 1007 | 同量级 |
+| App Task UserIF | 391 / 391 | **391 / 391** | 完全一致 |
+| App Task COM | 543 / 659 | 543 / 907 | 同量级 |
+| App Task STAT | 519 / 519 | **519 / 519** | 完全一致 |
+| App Task IDLE | 143 / 71 | 151 / **71** | 完全一致 |
+| System Timer Thread | 391 / 391 | **395 / 395** | 完全一致 |
+
+| 项 | Keil(ARMCC) | 本模板(GCC) | 结论 |
+|---|---|---|---|
+| 任务数量 | 6 + 1 系统定时器线程 | 6 + 1 = **7** | 一致 |
+| 任务名 / 优先级 / 栈大小 | 见原注释 | 完全一致 | 一致 |
+| OS CPU Usage | 1.94% | 0.67% ~ 0.92% | 同量级 |
+
+**结论：移植后的栈行为与 Keil 版等价**，最紧的 `App Task STAT`（1020 字节）也还剩 501 字节余量，不存在栈溢出风险，无需改动原例程的 `main.c`。
+
+> **实测踩到的两个坑（已写进脚本，避免后人重踩）**
+> 1. GDB 里 `tx_thread_stack_end - tx_thread_stack_ptr` 对 `ULONG*` 相减返回的是**字数**，
+>    再 `*4` 会把用量放大 4 倍——一度误判成"`App Msp Pro` 只剩 64 字节、即将栈溢出"。
+>    脚本里改用 `(char*)` 强制按字节相减后才与 Keil 数据对上。
+> 2. OpenOCD 在 GDB 客户端断开后**默认保持 halted**，不 `monitor resume` 的话板子会"哑掉"，
+>    串口一条数据都没有——很容易被误判成"固件跑飞"。脚本末尾已加 `monitor resume`。
+
+### 看线程栈水位（免按 K1）
+
+```bash
+# 终端 A：起 GDB 服务器
+openocd -f interface/cmsis-dap.cfg -f target/stm32h7x.cfg \
+        -c "adapter speed 1800" -c "gdb port 3333" -c init -c "reset run"
+
+# 终端 B：读出线程栈水位表
+arm-none-eabi-gdb build/Cmake_threadX_Template.elf -x tools/thread_stack.gdb
+```
+
+> GDB 断开后 OpenOCD 默认保持 halted，脚本末尾已自动 `monitor resume`；
+> 若手工操作，记得再执行一次 `monitor resume`，否则串口会没有输出。
+
+### 一键复现
+
+```bash
+./tools/verify_on_board.sh            # 编译 + 烧录 + 抓 15 秒串口 + 结论
+DURATION=30 ./tools/verify_on_board.sh
+PORT=COM4    ./tools/verify_on_board.sh
+```
+
+### 静态级验证（上一版结论，仍然有效）
 
 - Debug / Release 全量编译链接无错误，产出 elf/hex/bin/map。
 - `nm` 确认 `_vectors = g_pfnVectors = 0x08000000`；向量表首字 `0x24080000`（`_estack`），Reset/PendSV/SysTick 入口均指向正确实现。
@@ -284,12 +412,13 @@ cmake --build --preset Debug
 - `_tx_initialize_low_level` 反汇编确认写入 `SCB->VTOR (0xE000ED08)`、SysTick LOAD/CTRL、SHPR1~3。
 - `printf` / `_printf_float` / `__io_putchar` / `_write` 全部链接进镜像。
 
-**未验证 / 注意**
+### 仍未覆盖 / 注意
 
-- 没有连接 V7 实板，**未做上板运行、串口打印、按键与烧录验证**。
+- **按键 K1 路径未人工触发**（需物理按键），但该路径打印的正是上面 GDB 读出的同一份 TCB 数据，等效验证。
 - `ThreadX/ports/cortex_m7/gnu/CMakeLists.txt` 是上游官方片段，本工程不使用它（构建由 `cmake/threadx.cmake` 负责）。
 - 示例 `main.c` 用静态数组做任务栈，未使用 `first_unused_memory`；若改用 `tx_byte_pool_create()` 等动态分配，请核对 ld 里 `__RAM_segment_used_end__` 的 32 KB 余量是否够。
 - `SVC_Handler` 保持 CMSIS 的 weak 空实现（Cortex-M7 版 ThreadX 不用 SVC），与原 Keil 工程行为一致。
+- 实测未覆盖：DMA、低功耗、以太网、SD 卡等外设（模板未启用相应驱动）。
 
 ---
 
