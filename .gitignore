@@ -1,0 +1,37 @@
+# ---------- 构建产物 ----------
+build/
+*.elf
+*.bin
+*.hex
+*.map
+*.o
+*.obj
+*.d
+*.su
+
+# ---------- 编辑器 / IDE ----------
+.vscode/*.log
+*.code-workspace
+.cache/
+compile_commands.json
+
+# ---------- 工具与临时目录 ----------
+.workbuddy/
+_backup/
+
+# ---------- CubeMX 备份 ----------
+*.bak
+.mxproject.bak
+
+# ============================================================
+# Libraries 完整纳入版本控制（HAL 全集 + 编译所需 CMSIS 头文件），
+# 便于 clone 后直接启用其它外设；未参与编译的 BSP 源码同样保留。
+# 为控制仓库体积，只保留 STM32H743 相关的 3 个 CMSIS 设备头。
+# ============================================================
+
+# ---------- 本模板新增 ----------
+*.log
+build-release/
+cmake-build-*/
+.DS_Store
+Thumbs.db

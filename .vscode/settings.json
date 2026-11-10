@@ -1,0 +1,45 @@
+{
+    // ---------- clangd：代码补全 / 跳转 / 消红 ----------
+    "clangd.path": "D:/Embedded_Toolchain/clangd/23.1.0/bin/clangd.exe",
+    "clangd.arguments": [
+        "--compile-commands-dir=${workspaceFolder}/build",
+        "--query-driver=D:/Embedded_Toolchain/arm-none-eabi-gcc/15.3.rel2/bin/arm-none-eabi-gcc.exe",
+        "--background-index",
+        "--clang-tidy=false",
+        "--header-insertion=never",
+        "--completion-style=detailed",
+        "--all-scopes-completion"
+    ],
+
+    // ---------- 关掉微软 C/C++ 插件的 IntelliSense，避免和 clangd 打架 ----------
+    "C_Cpp.intelliSenseEngine": "disabled",
+
+    // ---------- CMake Tools ----------
+    "cmake.generator": "Ninja",
+    "cmake.buildDirectory": "${workspaceFolder}/build",
+    "cmake.configureArgs": [
+        "-DCMAKE_TOOLCHAIN_FILE=${workspaceFolder}/cmake/gcc-arm-none-eabi.cmake",
+        "-DCMAKE_BUILD_TYPE=Debug"
+    ],
+
+    // ---------- 文件同步：解决「AI 改了文件但编辑器不刷新」 ----------
+    // afterDelay：编辑器里改动 1 秒后自动写盘，缓冲区不会长期处于未保存状态，
+    // 这样外部（AI / 脚本 / git）修改磁盘文件时，VS Code 才能自动重载新内容。
+    "files.autoSave": "afterDelay",
+    "files.autoSaveDelay": 1000,
+
+    // ---------- 终端：本模板的脚本是 Bash 写的，默认终端必须是 Git Bash ----------
+    // Windows 下 VS Code 集成终端默认是 PowerShell，直接执行 ./run.sh 会报
+    // 「无法将“./run.sh”项识别为 cmdlet」；改成 Git Bash 后提示符由 PS> 变为 $
+    "terminal.integrated.defaultProfile.windows": "Git Bash",
+
+    // ---------- 其它 ----------
+    "files.associations": {
+        "*.ld": "linkerscript",
+        "*.s": "asm"
+    },
+    "search.exclude": {
+        "build/**": true,
+        "Drivers/**": true
+    }
+}
